@@ -2,7 +2,7 @@
   "name": "Little Plates – weaning tracker",
   "short_name": "Little Plates",
   "description": "Track your baby's vegetarian weaning journey, one food at a time.",
-  "id": "little-plates-weaning",
+  "id": "little-plates-weaning-app",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
