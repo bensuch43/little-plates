@@ -214,6 +214,20 @@ legend{font-weight:800;font-size:.88rem;margin-bottom:6px;padding:0}
 .toast.has-action{pointer-events:auto;display:flex;align-items:center;gap:14px;padding-right:8px}
 .toast button{border:0;background:transparent;color:var(--yolk);font-weight:800;padding:6px 10px;min-height:36px}
 .add-own{display:block;width:100%;margin:6px 0 10px}
+.mi{border:1.5px solid var(--line);border-radius:var(--radius-md);margin-top:8px;background:var(--bg)}
+.mi.open{border-color:var(--ink)}
+.mi-head{display:flex;align-items:center}
+.mi-main{all:unset;box-sizing:border-box;cursor:pointer;flex:1;min-width:0;display:flex;gap:10px;align-items:center;padding:10px 12px;min-height:56px;border-radius:var(--radius-md)}
+.mi-main:focus-visible,.icon-btn:focus-visible{outline:3px solid var(--yolk);outline-offset:-3px}
+.mi-main .dot{width:14px;height:14px;border-radius:50%;flex:none}
+.mi-main b{display:block;line-height:1.25}
+.mi-main small{color:var(--muted);font-weight:700;font-size:.82rem}
+.icon-btn{all:unset;box-sizing:border-box;cursor:pointer;width:44px;height:48px;display:grid;place-items:center;color:var(--muted);border-radius:10px;flex:none}
+.mi-body{padding:0 12px 12px}
+.mi-label{font-weight:800;font-size:.82rem;margin:10px 0 6px}
+.opt.sm{min-height:36px;padding:5px 11px;font-size:.88rem}
+.all-box{border:1.5px dashed var(--line);border-radius:var(--radius-md);padding:10px 12px;margin:12px 0}
+.all-box summary{cursor:pointer;font-weight:800;padding:4px 0}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -283,7 +297,7 @@ const REACTIONS = [
 ];
 const TEXTURES = [
   { id:'puree', label:'Purée' }, { id:'mashed', label:'Mashed' },
-  { id:'finger', label:'Finger food' }, { id:'meal', label:'In a meal' },
+  { id:'finger', label:'Whole / finger food' }, { id:'meal', label:'In a meal' },
 ];
 const AMOUNTS = [
   { id:'taste', label:'A taste' }, { id:'some', label:'A few bites' },
@@ -744,54 +758,95 @@ function openLog(id, i){
     <div class="sheet-foot"><button class="btn" data-act="save-try">${existing?'Save changes':'Save try'}</button>${existing?'<button class="btn danger" data-act="del-try">Delete</button>':''}</div>`);
 }
 
-/* --- Log a whole meal --- */
+/* --- Log a whole meal: each item carries its own reaction, amount, texture and note --- */
+let itemSeq=0;
+const newItem = (id, from) => ({ k:++itemSeq, id, r:from?from.r:'', a:from?from.a:'', t:from?from.t:'', n:'' });
 function openMeal(keep){
-  if (!keep || !mealDraft) mealDraft={d:todayISO(), m:defaultMeal(), foods:[], r:'', a:'', t:'', n:'', q:''};
+  if (!keep || !mealDraft) mealDraft={d:todayISO(), m:defaultMeal(), items:[], open:null, n:'', q:''};
   active=mealDraft;
   openSheet(`
-    <h2>Log a meal</h2><p class="sub">Add everything that was on the plate. You can change each food's reaction afterwards.</p>
+    <h2>Log a meal</h2><p class="sub">Add each food, then tap it to record how it went. Add the same food twice if it was served two ways.</p>
     <label class="field"><span>Date</span><input type="date" id="mDate" value="${mealDraft.d}" max="${todayISO()}"></label>
     <fieldset><legend>Meal</legend>${optGroup(MEALS,'set-m',mealDraft.m)}</fieldset>
     <fieldset><legend>Foods</legend>
-      <div class="mini-chips" id="mealSel"></div>
+      <div id="mealItems"></div>
       <label class="search" style="margin-top:10px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <span class="visually-hidden">Search foods to add</span><input id="mq" type="search" placeholder="Search to add a food" value="${esc(mealDraft.q)}" autocomplete="off"></label>
       <div id="mealPick"></div>
     </fieldset>
     <div id="guard"></div>
-    <fieldset><legend>How did it go? (applies to every food)</legend>${optGroup(REACTIONS,'set-r',mealDraft.r)}</fieldset>
-    <div id="rxWarn">${mealDraft.r==='reaction'?reactionWarn():''}</div>
-    <fieldset><legend>How much</legend>${optGroup(AMOUNTS,'set-a',mealDraft.a)}</fieldset>
-    <fieldset><legend>Texture</legend>${optGroup(TEXTURES,'set-t',mealDraft.t)}</fieldset>
-    <label class="field"><span>Notes</span><textarea id="mNote" placeholder="What the meal was, anything you noticed">${esc(mealDraft.n)}</textarea></label>
+    <div id="rxWarn"></div>
+    <div id="mealAll"></div>
+    <label class="field"><span>Meal notes</span><textarea id="mNote" placeholder="What the meal was, anything you noticed">${esc(mealDraft.n)}</textarea></label>
     <div class="sheet-foot"><button class="btn" id="mealSave" data-act="meal-save">Save meal</button></div>`);
   renderMealParts();
 }
+function itemSummary(it){
+  const bits=[it.r?rx(it.r).label:'', label(AMOUNTS,it.a), label(TEXTURES,it.t)].filter(Boolean);
+  return bits.length ? bits.join(' · ') : 'Tap to add details';
+}
+const itemGroup = (it, f, list) => `<div class="opt-group">${list.map(o=>`<button type="button" class="opt sm" data-act="mi-set" data-k="${it.k}" data-f="${f}" data-v="${o.id}" aria-pressed="${it[f]===o.id}">${o.v?`<span class="sw" style="background:var(${o.v})"></span>`:''}${o.label}</button>`).join('')}</div>`;
+function renderItems(){
+  const box=document.getElementById('mealItems'); if (!box) return;
+  if (!mealDraft.items.length){ box.innerHTML='<p class="muted" style="margin:0">Nothing added yet</p>'; return; }
+  const counts={}; mealDraft.items.forEach(it=>counts[it.id]=(counts[it.id]||0)+1);
+  box.innerHTML = mealDraft.items.map(it=>{
+    const f=foodById(it.id), open=mealDraft.open===it.k;
+    const dot = it.r ? rxColour(it.r) : catById(f.cat).colour;
+    return `<div class="mi${open?' open':''}">
+      <div class="mi-head">
+        <button class="mi-main" data-act="mi-toggle" data-k="${it.k}" aria-expanded="${open}">
+          <span class="dot" style="background:${dot}"></span>
+          <span><b>${esc(f.name)}</b><small>${itemSummary(it)}</small></span>
+        </button>
+        <button class="icon-btn" data-act="mi-dup" data-k="${it.k}" aria-label="Add ${esc(f.name)} again, served another way" title="Add again"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="3"/><path d="M16 4H7a3 3 0 0 0-3 3v9"/></svg></button>
+        <button class="icon-btn" data-act="mi-rm" data-k="${it.k}" aria-label="Remove ${esc(f.name)}" title="Remove"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      ${open?`<div class="mi-body">
+        <p class="mi-label">How did it go?</p>${itemGroup(it,'r',REACTIONS)}
+        <p class="mi-label">Texture</p>${itemGroup(it,'t',TEXTURES)}
+        <p class="mi-label">How much</p>${itemGroup(it,'a',AMOUNTS)}
+        <label class="field"><span>Note for ${esc(f.name)}${counts[it.id]>1?' (this serving)':''}</span><input data-mi-note="${it.k}" value="${esc(it.n)}" placeholder="How it was prepared" autocomplete="off"></label>
+        <button class="btn ghost" style="width:100%" data-act="mi-toggle" data-k="${it.k}">Done</button>
+      </div>`:''}
+    </div>`;
+  }).join('');
+}
+function renderMealAll(){
+  const box=document.getElementById('mealAll'); if (!box) return;
+  if (mealDraft.items.length<2){ box.innerHTML=''; return; }
+  const same=f=>{ const v=mealDraft.items[0][f]; return mealDraft.items.every(i=>i[f]===v)?v:null; };
+  const grp=(f,list)=>`<div class="opt-group">${list.map(o=>`<button type="button" class="opt sm" data-act="all-set" data-f="${f}" data-v="${o.id}" aria-pressed="${same(f)===o.id}">${o.v?`<span class="sw" style="background:var(${o.v})"></span>`:''}${o.label}</button>`).join('')}</div>`;
+  box.innerHTML=`<details class="all-box"><summary>Set the same for every food</summary>
+    <p class="mi-label">How did it go?</p>${grp('r',REACTIONS)}
+    <p class="mi-label">Texture</p>${grp('t',TEXTURES)}
+    <p class="mi-label">How much</p>${grp('a',AMOUNTS)}</details>`;
+}
 function pickRow(f){
+  const inMeal=mealDraft.items.some(i=>i.id===f.id);
   return `<li><button data-act="meal-add" data-id="${f.id}"><span class="cat-dot" style="background:${catById(f.cat).colour}"></span>${esc(f.name)}
     ${f.al.length?'<span class="al-badge" aria-label="contains an allergen">A</span>':''}${f.iron?'<span class="fe-badge" aria-label="iron-rich">Fe</span>':''}
-    <small>${tries(f.id).length?`${tries(f.id).length} ${tries(f.id).length===1?'try':'tries'}`:'new'}</small></button></li>`;
+    <small>${inMeal?'add again':tries(f.id).length?`${tries(f.id).length} ${tries(f.id).length===1?'try':'tries'}`:'new'}</small></button></li>`;
 }
 function renderMealParts(){
-  const sel=document.getElementById('mealSel'); if (!sel) return;
-  sel.innerHTML = mealDraft.foods.length
-    ? mealDraft.foods.map(id=>`<button class="mini done" data-act="meal-rm" data-id="${id}" aria-label="Remove ${esc(foodById(id).name)}">${esc(foodById(id).name)} ✕</button>`).join('')
-    : '<span class="muted">Nothing added yet</span>';
-  const q=mealDraft.q.toLowerCase(); const avail=allFoods().filter(f=>!mealDraft.foods.includes(f.id));
-  let html='';
+  if (!document.getElementById('mealItems')) return;
+  renderItems(); renderMealAll();
+  const q=mealDraft.q.toLowerCase(); let html='';
   if (q){
-    const hits=avail.filter(f=>f.name.toLowerCase().includes(q)).sort((a,b)=>a.name.toLowerCase().indexOf(q)-b.name.toLowerCase().indexOf(q) || a.name.localeCompare(b.name)).slice(0,8);
+    const hits=allFoods().filter(f=>f.name.toLowerCase().includes(q)).sort((a,b)=>a.name.toLowerCase().indexOf(q)-b.name.toLowerCase().indexOf(q) || a.name.localeCompare(b.name)).slice(0,8);
     html = hits.length ? `<ul class="pick-list">${hits.map(pickRow).join('')}</ul>` : '';
     if (!allFoods().some(f=>f.name.toLowerCase()===q)) html += `<button class="btn ghost" style="width:100%;margin-top:8px" data-act="meal-new">Add “${esc(mealDraft.q)}” as a new food</button>`;
   } else {
-    const recent=avail.filter(f=>tries(f.id).length).sort((a,b)=>sortTries(tries(b.id)).at(-1).d.localeCompare(sortTries(tries(a.id)).at(-1).d)).slice(0,6);
+    const recent=allFoods().filter(f=>tries(f.id).length && !mealDraft.items.some(i=>i.id===f.id)).sort((a,b)=>sortTries(tries(b.id)).at(-1).d.localeCompare(sortTries(tries(a.id)).at(-1).d)).slice(0,6);
     if (recent.length) html=`<p class="pick-head">Recently offered</p><ul class="pick-list">${recent.map(pickRow).join('')}</ul>`;
   }
   document.getElementById('mealPick').innerHTML=html;
-  document.getElementById('guard').innerHTML=allergenGuard(mealDraft.foods, mealDraft.d);
-  const btn=document.getElementById('mealSave'); const n=mealDraft.foods.length;
-  btn.disabled=!n; btn.textContent = n ? `Save meal (${n} food${n===1?'':'s'})` : 'Save meal';
+  document.getElementById('guard').innerHTML=allergenGuard(mealDraft.items.map(i=>i.id), mealDraft.d);
+  document.getElementById('rxWarn').innerHTML=mealDraft.items.some(i=>i.r==='reaction')?reactionWarn():'';
+  const btn=document.getElementById('mealSave'); const n=mealDraft.items.length;
+  btn.disabled=!n; btn.textContent = n ? `Save meal (${n} item${n===1?'':'s'})` : 'Save meal';
 }
+const addToMeal = id => { const it=newItem(id); mealDraft.items.push(it); mealDraft.open=it.k; mealDraft.q=''; };
 
 /* --- Food detail --- */
 function openFood(id){
@@ -872,8 +927,14 @@ document.addEventListener('click', e=>{
       toast('Try deleted', {label:'Undo', fn:()=>{ (state.log[fid]=state.log[fid]||[]).push(removed); save(); refreshAfterChange(); }});
       break; }
     case 'log-meal': openMeal(false); break;
-    case 'meal-add': mealDraft.foods.push(id); mealDraft.q=''; { const q=document.getElementById('mq'); q.value=''; renderMealParts(); q.focus(); } break;
-    case 'meal-rm': mealDraft.foods=mealDraft.foods.filter(x=>x!==id); renderMealParts(); break;
+    case 'meal-add': addToMeal(id); document.getElementById('mq').value=''; renderMealParts(); break;
+    case 'mi-toggle': { const k=+el.dataset.k; mealDraft.open = mealDraft.open===k ? null : k; renderMealParts(); break; }
+    case 'mi-dup': { const src=mealDraft.items.find(i=>i.k===+el.dataset.k); const it=newItem(src.id);
+      mealDraft.items.splice(mealDraft.items.indexOf(src)+1,0,it); mealDraft.open=it.k; renderMealParts(); break; }
+    case 'mi-rm': mealDraft.items=mealDraft.items.filter(i=>i.k!==+el.dataset.k); renderMealParts(); break;
+    case 'mi-set': { const it=mealDraft.items.find(i=>i.k===+el.dataset.k), f=el.dataset.f, v=el.dataset.v; it[f] = it[f]===v ? '' : v; renderMealParts(); break; }
+    case 'all-set': { const f=el.dataset.f, v=el.dataset.v; const allSame=mealDraft.items.every(i=>i[f]===v);
+      mealDraft.items.forEach(i=>i[f]= allSame ? '' : v); renderMealParts(); sheet.querySelector('.all-box').open=true; break; }
     case 'meal-new': mealDraft.n=document.getElementById('mNote').value; openAddFood(mealDraft.q.charAt(0).toUpperCase()+mealDraft.q.slice(1), {toMeal:true}); break;
     case 'meal-save': saveMeal(); break;
     case 'add-food': openAddFood(el.dataset.name||''); break;
@@ -913,11 +974,11 @@ function saveTry(){
 function saveMeal(){
   const d=document.getElementById('mDate').value; if (!d){ toast('Choose a date'); return; }
   const n=document.getElementById('mNote').value.trim();
-  mealDraft.foods.forEach(id=>(state.log[id]=state.log[id]||[]).push({d, m:mealDraft.m, r:mealDraft.r, a:mealDraft.a, t:mealDraft.t, n}));
+  mealDraft.items.forEach(it=>(state.log[it.id]=state.log[it.id]||[]).push({d, m:mealDraft.m, r:it.r, a:it.a, t:it.t, n:[it.n.trim(), n].filter(Boolean).join('. ')}));
   if (!state.baby.start || d<state.baby.start) state.baby.start = d;
-  const count=mealDraft.foods.length, meal=label(MEALS,mealDraft.m).toLowerCase();
+  const count=mealDraft.items.length, meal=label(MEALS,mealDraft.m).toLowerCase();
   mealDraft=null; save(); buzz(); closeSheet(); refreshAfterChange();
-  toast(`${count} food${count===1?'':'s'} logged${meal?' for '+meal:''}`);
+  toast(`${count} item${count===1?'':'s'} logged${meal?' for '+meal:''}`);
 }
 function saveNewFood(){
   const name=document.getElementById('nfName').value.trim().replace(/\s+/g,' ');
@@ -926,7 +987,7 @@ function saveNewFood(){
   const clash=[...BUILTIN,...state.custom].find(f=>f.id!==newFood.editId && f.name.toLowerCase()===name.toLowerCase());
   if (clash){
     if (state.hidden.includes(clash.id)){ state.hidden=state.hidden.filter(x=>x!==clash.id); save(); refreshAfterChange(); toast(`${clash.name} was hidden. It's back.`);
-      if (newFood.toMeal){ mealDraft.foods.push(clash.id); mealDraft.q=''; openMeal(true); } else closeSheet(); return; }
+      if (newFood.toMeal){ addToMeal(clash.id); openMeal(true); } else closeSheet(); return; }
     err.textContent=`${clash.name} is already in ${catById(clash.cat).name}.`; return;
   }
   const fields={name:name.charAt(0).toUpperCase()+name.slice(1), cat:newFood.cat, al:newFood.al, iron:newFood.iron};
@@ -935,13 +996,15 @@ function saveNewFood(){
   }
   const f={id:'c-'+Date.now().toString(36), ...fields};
   state.custom.push(f); save();
-  if (newFood.toMeal){ mealDraft.foods.push(f.id); mealDraft.q=''; openMeal(true); refreshAfterChange(); toast(`${f.name} added`); return; }
+  if (newFood.toMeal){ addToMeal(f.id); openMeal(true); refreshAfterChange(); toast(`${f.name} added`); return; }
   closeSheet(); ui.q=''; ui.filter='all'; state.collapsed[f.cat]=false; render(); toast(`${f.name} added to ${catById(f.cat).name}`);
 }
 
 document.addEventListener('input', e=>{
   if (e.target.id==='q'){ ui.q=e.target.value.trim(); refreshFoods(); }
   if (e.target.id==='mq'){ mealDraft.q=e.target.value.trim(); renderMealParts(); }
+  if (e.target.dataset.miNote && mealDraft){ mealDraft.items.find(i=>i.k===+e.target.dataset.miNote).n=e.target.value; }
+  if (e.target.id==='mNote' && mealDraft){ mealDraft.n=e.target.value; }
 });
 document.addEventListener('change', e=>{
   const k=e.target.dataset.baby;

@@ -15,12 +15,15 @@ All paths are relative, so it works under a project sub-path without changes.
 
 ## Install on Android
 
+The manifest `id` (`little-plates-weaning`) must be unique across every PWA on your github.io domain. Relative ids resolve against the domain root, so `./` or `/` would collide with your other apps. If you fork this for another app, change the id.
+
+
 Open the URL in Chrome → menu (⋮) → **Install app** (or **Add to Home screen**). The app also offers an **Install app** button on the Progress tab when Chrome allows it.
 
 ## Updating
 
 1. Edit `index.html`.
-2. In `sw.js`, bump `CACHE_VERSION` (e.g. `littleplates-v2`).
+2. In `sw.js`, bump `CACHE_VERSION` (e.g. `littleplates-v4`).
 3. Commit. Installed phones pick up the change on the next launch or the one after.
 
 ## Configuration
@@ -47,6 +50,7 @@ Changing a built-in food's **name** changes its internal id, so existing tries f
 | Version | Changes |
 |---|---|
 | v1 | Initial release |
+| v3 | Fix: unique manifest `id` so Chrome no longer confuses it with other PWAs on the same github.io domain; service worker now fetches app files network-first. Meals record reaction, texture, amount and note per food, and the same food can be added twice (e.g. whole and puréed) |
 | v2 | Log a meal, allergen one-at-a-time check, amount eaten, meal slot, ideas for today, iron-rich tags, filter counts, share summary, undo, edit custom foods, first-run welcome, sticky save buttons |
 
 v1 backups import into v2 unchanged; the new fields are optional.
